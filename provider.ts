@@ -46,7 +46,6 @@ class Provider {
         const episodes: EpisodeDetails[] = [];
 
         try {
-            // Call Anikoto series endpoint directly
             const response = await fetch(`https://anikotoapi.site/series/${aniListId}`);
             if (response.ok) {
                 const json: AnikotoSeriesResponse = await response.json();
@@ -56,7 +55,6 @@ class Provider {
                     const ep = epList[i];
                     const epNum = ep.episode_no ?? ep.num ?? (i + 1);
                     
-                    // Attach the sub and dub embed URLs provided by Anikoto directly into episode details
                     const subUrl = ep.embed_url?.sub || "";
                     const dubUrl = ep.embed_url?.dub || "";
 
@@ -73,7 +71,7 @@ class Provider {
             console.error("[Megaplay] Failed to fetch series from Anikoto API", e);
         }
 
-        // Fallback
+        // Fallback array if API fails
         for (let i = 1; i <= 24; i++) {
             episodes.push({
                 id: `${aniListId}?ep=${i}`,
@@ -88,9 +86,10 @@ class Provider {
 
     async findEpisodeServer(
         episode: EpisodeDetails,
-        _server: string
+        server: string
     ): Promise<EpisodeServer> {
-        const isDub = episode.url.includes('"dub":') ? episode.url.includes("dub=true") : false;
+        // Correctly check if Seanime passed dub choice in the server selection or URL
+        const isDub = server.toLowerCase().includes("dub");
         let targetUrl = "";
 
         try {
@@ -101,13 +100,12 @@ class Provider {
                 targetUrl = `https://megaplay.buzz/stream/ani/${data.id}/${data.ep}/${isDub ? 'dub' : 'sub'}`;
             }
         } catch {
-            const aniListId = episode.url.split('?')[0];
+            const aniListId = episode.id.split('?')[0];
             targetUrl = `https://megaplay.buzz/stream/ani/${aniListId}/${episode.number}/${isDub ? 'dub' : 'sub'}`;
         }
 
-        console.debug(`[Megaplay] Resolving Stream URL: ${targetUrl}`);
+        console.debug(`[Megaplay] Fetching embed page: ${targetUrl}`);
 
-        // Scrape or fetch the m3u8 playlist URL from targetUrl
         let finalStreamUrl = targetUrl;
         try {
             const res = await fetch(targetUrl, {
@@ -117,17 +115,22 @@ class Provider {
                     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36"
                 }
             });
-            const text = await res.text();
-            const match = text.match(/(https?:\/\/[^"'\s]+\.m3u8[^"'\s]*)/i);
+            const html = await res.text();
+            
+            // Extract the .m3u8 link hidden inside script tags or variables
+            const match = html.match(/(https?:\/\/[^"'\s]+\.m3u8[^"'\s]*)/i);
             if (match) {
                 finalStreamUrl = match[1];
+                console.debug(`[Megaplay] Found M3U8 Stream: ${finalStreamUrl}`);
+            } else {
+                console.warn("[Megaplay] Could not find .m3u8 match in HTML body");
             }
         } catch (e) {
             console.error("[Megaplay] Could not resolve direct m3u8 playlist", e);
         }
 
         return {
-            server: "Server 1",
+            server: server || "Server 1",
             headers: {
                 "Referer": "https://megaplay.buzz/",
                 "Origin": "https://megaplay.buzz",
