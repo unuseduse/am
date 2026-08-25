@@ -2,6 +2,8 @@
 /// <reference path="./core.d.ts"/>
 
 class Provider {
+    private api: string = "{{baseUrl}}";
+
     getSettings(): Settings {
         return {
             episodeServers: ["Server 1"],
@@ -13,7 +15,7 @@ class Provider {
         return [
             {
                 id: query.query,
-                url: `https://megaplay.buzz`,
+                url: this.api,
                 title: query.query,
                 subOrDub: "both",
             }
@@ -23,7 +25,6 @@ class Provider {
     async findEpisodes(id: string): Promise<EpisodeDetails[]> {
         const episodes: EpisodeDetails[] = [];
         
-        // Generate episode list mapping for up to 100 episodes
         for (let i = 1; i <= 100; i++) {
             episodes.push({
                 id: `${id}?ep=${i}`,
@@ -47,10 +48,10 @@ class Provider {
         const aniListId = episode.url.split('?')[0];
         const langPath = isDub ? "dub" : "sub";
 
-        // Construct Megaplay AniList Embed URL
-        const embedUrl = `https://megaplay.buzz/stream/anilist/${aniListId}/${episodeNum}/${langPath}`;
+        // Megaplay Endpoint: /stream/ani/{anilist-id}/{ep-num}/{language}
+        const embedUrl = `${this.api}/stream/ani/${aniListId}/${episodeNum}/${langPath}`;
 
-        console.debug(`[Megaplay] Embed Target: ${embedUrl}`);
+        console.debug(`[Megaplay] Generated Embed Target: ${embedUrl}`);
 
         return {
             server: "Server 1",
