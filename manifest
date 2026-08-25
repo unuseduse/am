@@ -1,0 +1,17 @@
+{
+  "id": "megaplay",
+  "name": "Megaplay",
+  "description": "Direct AniList embed provider powered by Megaplay",
+  "manifestURI": "https://raw.githubusercontent.com/unuseduse/am/refs/heads/main/manifest.json",
+  "version": "1.0.0",
+  "author": "unuseduse",
+  "type": "onlinestream-provider",
+  "language": "typescript",
+  "lang": "en",
+  "payloadURI": "https://raw.githubusercontent.com/unuseduse/am/refs/heads/main/provider.ts",
+  "userConfig": {
+    "requiresConfig": false,
+    "version": 1,
+    "fields": []
+  }
+}
