@@ -1,0 +1,71 @@
+/// <reference path="./online-streaming-provider.d.ts" />
+/// <reference path="./core.d.ts"/>
+
+class Provider {
+    getSettings(): Settings {
+        return {
+            episodeServers: ["Server 1"],
+            supportsDub: true,
+        };
+    }
+
+    async search(query: SearchOptions): Promise<SearchResult[]> {
+        return [
+            {
+                id: query.query,
+                url: `https://megaplay.buzz`,
+                title: query.query,
+                subOrDub: "both",
+            }
+        ];
+    }
+
+    async findEpisodes(id: string): Promise<EpisodeDetails[]> {
+        const episodes: EpisodeDetails[] = [];
+        
+        // Generate episode list mapping for up to 100 episodes
+        for (let i = 1; i <= 100; i++) {
+            episodes.push({
+                id: `${id}?ep=${i}`,
+                number: i,
+                title: `Episode ${i}`,
+                url: `${id}?ep=${i}`
+            });
+        }
+
+        return episodes;
+    }
+
+    async findEpisodeServer(
+        episode: EpisodeDetails,
+        _server: string
+    ): Promise<EpisodeServer> {
+        const isDub = episode.url.includes("dub=true");
+        const episodeNum = episode.number;
+        
+        // Extract the AniList ID passed by Seanime
+        const aniListId = episode.url.split('?')[0];
+        const langPath = isDub ? "dub" : "sub";
+
+        // Construct Megaplay AniList Embed URL
+        const embedUrl = `https://megaplay.buzz/stream/anilist/${aniListId}/${episodeNum}/${langPath}`;
+
+        console.debug(`[Megaplay] Embed Target: ${embedUrl}`);
+
+        return {
+            server: "Server 1",
+            headers: {
+                "Referer": "https://megaplay.buzz/",
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36"
+            },
+            videoSources: [
+                {
+                    quality: "Auto",
+                    subtitles: [],
+                    type: "iframe",
+                    url: embedUrl
+                }
+            ]
+        };
+    }
+}
