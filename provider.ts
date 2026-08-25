@@ -2,30 +2,22 @@
 /// <reference path="./core.d.ts"/>
 
 interface AnikotoEpisode {
-    episode_no?: number;
-    num?: number;
-    title?: string;
+    id: number;
+    number: number;
+    title: string;
+    episode_embed_id: string;
     embed_url?: {
         sub?: string;
         dub?: string;
     };
 }
 
-interface AnikotoSeriesResponse {
-    ok?: boolean;
-    anime?: any;
-    episodes?: AnikotoEpisode[];
-    data?: {
-        episodes?: AnikotoEpisode[];
-    };
-}
-
 class Provider {
-    private api: string = "{{baseUrl}}";
+    private api: string = "https://anikotoapi.site";
 
     getSettings(): Settings {
         return {
-            episodeServers: ["Server 1"],
+            episodeServers: ["Subbed", "Dubbed"],
             supportsDub: true,
         };
     }
@@ -34,7 +26,7 @@ class Provider {
         return [
             {
                 id: query.query,
-                url: this.api,
+                url: `${this.api}/series/${query.query}`,
                 title: query.query,
                 subOrDub: "both",
             }
@@ -44,41 +36,41 @@ class Provider {
     async findEpisodes(id: string): Promise<EpisodeDetails[]> {
         const aniListId = id.split('?')[0];
         const episodes: EpisodeDetails[] = [];
+        let internalId = aniListId;
 
         try {
-            const response = await fetch(`https://anikotoapi.site/series/${aniListId}`);
-            if (response.ok) {
-                const json: AnikotoSeriesResponse = await response.json();
-                const epList = json.episodes ?? json.data?.episodes ?? [];
+            // First attempt direct load with provided ID
+            let response = await fetch(`${this.api}/series/${internalId}`);
+            let json = await response.json();
 
-                for (let i = 0; i < epList.length; i++) {
-                    const ep = epList[i];
-                    const epNum = ep.episode_no ?? ep.num ?? (i + 1);
-                    
-                    const subUrl = ep.embed_url?.sub || "";
-                    const dubUrl = ep.embed_url?.dub || "";
+            // Check if returned anime matches our AniList ID; if not, query recent/search mapping
+            if (!json.ok || (json.data?.anime?.ani_id && String(json.data.anime.ani_id) !== String(aniListId))) {
+                // If the ID wasn't internal, search by term or fetch series directly
+                const searchRes = await fetch(`${this.api}/series/${aniListId}`);
+                const searchJson = await searchRes.json();
+                if (searchJson.ok) json = searchJson;
+            }
 
-                    episodes.push({
-                        id: `${aniListId}?ep=${epNum}`,
-                        number: epNum,
-                        title: ep.title || `Episode ${epNum}`,
-                        url: JSON.stringify({ sub: subUrl, dub: dubUrl, ep: epNum, id: aniListId })
-                    });
-                }
-                if (episodes.length > 0) return episodes;
+            const epList: AnikotoEpisode[] = json.data?.episodes ?? json.episodes ?? [];
+
+            for (let i = 0; i < epList.length; i++) {
+                const ep = epList[i];
+                const epNum = ep.number ?? (i + 1);
+
+                episodes.push({
+                    id: `${aniListId}?ep=${epNum}`,
+                    number: epNum,
+                    title: ep.title || `Episode ${epNum}`,
+                    url: JSON.stringify({
+                        sub: ep.embed_url?.sub || "",
+                        dub: ep.embed_url?.dub || "",
+                        embed_id: ep.episode_embed_id,
+                        number: epNum
+                    })
+                });
             }
         } catch (e) {
-            console.error("[Megaplay] Failed to fetch series from Anikoto API", e);
-        }
-
-        // Fallback array if API fails
-        for (let i = 1; i <= 24; i++) {
-            episodes.push({
-                id: `${aniListId}?ep=${i}`,
-                number: i,
-                title: `Episode ${i}`,
-                url: JSON.stringify({ sub: "", dub: "", ep: i, id: aniListId })
-            });
+            console.error("[Anikoto] Failed to load episodes", e);
         }
 
         return episodes;
@@ -88,52 +80,25 @@ class Provider {
         episode: EpisodeDetails,
         server: string
     ): Promise<EpisodeServer> {
-        // Correctly check if Seanime passed dub choice in the server selection or URL
         const isDub = server.toLowerCase().includes("dub");
-        let targetUrl = "";
+        let streamTarget = "";
 
         try {
             const data = JSON.parse(episode.url);
-            targetUrl = isDub ? (data.dub || data.sub) : (data.sub || data.dub);
+            streamTarget = isDub ? (data.dub || data.sub) : (data.sub || data.dub);
             
-            if (!targetUrl) {
-                targetUrl = `https://megaplay.buzz/stream/ani/${data.id}/${data.ep}/${isDub ? 'dub' : 'sub'}`;
+            // Fallback if missing embed_url
+            if (!streamTarget && data.embed_id) {
+                streamTarget = `https://megaplay.buzz/stream/s-2/${data.embed_id}/${isDub ? 'dub' : 'sub'}`;
             }
         } catch {
-            const aniListId = episode.id.split('?')[0];
-            targetUrl = `https://megaplay.buzz/stream/ani/${aniListId}/${episode.number}/${isDub ? 'dub' : 'sub'}`;
-        }
-
-        console.debug(`[Megaplay] Fetching embed page: ${targetUrl}`);
-
-        let finalStreamUrl = targetUrl;
-        try {
-            const res = await fetch(targetUrl, {
-                headers: {
-                    "Referer": "https://megaplay.buzz/",
-                    "Origin": "https://megaplay.buzz",
-                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36"
-                }
-            });
-            const html = await res.text();
-            
-            // Extract the .m3u8 link hidden inside script tags or variables
-            const match = html.match(/(https?:\/\/[^"'\s]+\.m3u8[^"'\s]*)/i);
-            if (match) {
-                finalStreamUrl = match[1];
-                console.debug(`[Megaplay] Found M3U8 Stream: ${finalStreamUrl}`);
-            } else {
-                console.warn("[Megaplay] Could not find .m3u8 match in HTML body");
-            }
-        } catch (e) {
-            console.error("[Megaplay] Could not resolve direct m3u8 playlist", e);
+            streamTarget = "";
         }
 
         return {
-            server: server || "Server 1",
+            server: server || "Subbed",
             headers: {
                 "Referer": "https://megaplay.buzz/",
-                "Origin": "https://megaplay.buzz",
                 "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36"
             },
             videoSources: [
@@ -141,7 +106,7 @@ class Provider {
                     quality: "Auto",
                     subtitles: [],
                     type: "m3u8",
-                    url: finalStreamUrl
+                    url: streamTarget
                 }
             ]
         };
