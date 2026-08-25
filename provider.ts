@@ -1,5 +1,5 @@
-// <reference path="./online-streaming-provider.d.ts" />
-// <reference path="./core.d.ts" />
+/// <reference path="./online-streaming-provider.d.ts" />
+/// <reference path="./core.d.ts"/>
 
 class Provider {
     private api: string = "{{baseUrl}}";
@@ -24,7 +24,7 @@ class Provider {
 
     async findEpisodes(id: string): Promise<EpisodeDetails[]> {
         const episodes: EpisodeDetails[] = [];
-
+        
         for (let i = 1; i <= 100; i++) {
             episodes.push({
                 id: `${id}?ep=${i}`,
@@ -37,13 +37,13 @@ class Provider {
         return episodes;
     }
 
-    async findEpisodeServers(
+    async findEpisodeServer(
         episode: EpisodeDetails,
         _server: string
-    ): Promise<EpisodeServers> {
+    ): Promise<EpisodeServer> {
         const isDub = episode.url.includes("dub=true");
         const episodeNum = episode.number;
-
+        
         // Extract the AniList ID passed by Seanime
         const aniListId = episode.url.split('?')[0];
         const langPath = isDub ? "dub" : "sub";
@@ -70,5 +70,3 @@ class Provider {
         };
     }
 }
-
-export default new Provider();
