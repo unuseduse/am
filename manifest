@@ -11,7 +11,7 @@
   "payloadURI": "https://raw.githubusercontent.com/unuseduse/am/refs/heads/main/provider.ts",
   "userConfig": {
     "requiresConfig": false,
-    "version": "1",
+    "version": 1,
     "fields": [
       {
         "name": "baseUrl",
