@@ -5,16 +5,19 @@ interface AnikotoEpisode {
     episode_no?: number;
     num?: number;
     title?: string;
-    episode_embed_id?: string;
+    embed_url?: {
+        sub?: string;
+        dub?: string;
+    };
 }
 
 interface AnikotoSeriesResponse {
-    status?: boolean;
+    ok?: boolean;
+    anime?: any;
+    episodes?: AnikotoEpisode[];
     data?: {
         episodes?: AnikotoEpisode[];
-        total_episodes?: number;
     };
-    episodes?: AnikotoEpisode[];
 }
 
 class Provider {
@@ -43,37 +46,40 @@ class Provider {
         const episodes: EpisodeDetails[] = [];
 
         try {
-            // Attempt to fetch the actual series details from Anikoto API
+            // Call Anikoto series endpoint directly
             const response = await fetch(`https://anikotoapi.site/series/${aniListId}`);
             if (response.ok) {
                 const json: AnikotoSeriesResponse = await response.json();
-                const epList = json.data?.episodes ?? json.episodes ?? [];
+                const epList = json.episodes ?? json.data?.episodes ?? [];
 
-                if (epList.length > 0) {
-                    for (let i = 0; i < epList.length; i++) {
-                        const epNum = epList[i].episode_no ?? epList[i].num ?? (i + 1);
-                        episodes.push({
-                            id: `${aniListId}?ep=${epNum}`,
-                            number: epNum,
-                            title: epList[i].title || `Episode ${epNum}`,
-                            url: `${aniListId}?ep=${epNum}`
-                        });
-                    }
-                    return episodes;
+                for (let i = 0; i < epList.length; i++) {
+                    const ep = epList[i];
+                    const epNum = ep.episode_no ?? ep.num ?? (i + 1);
+                    
+                    // Attach the sub and dub embed URLs provided by Anikoto directly into episode details
+                    const subUrl = ep.embed_url?.sub || "";
+                    const dubUrl = ep.embed_url?.dub || "";
+
+                    episodes.push({
+                        id: `${aniListId}?ep=${epNum}`,
+                        number: epNum,
+                        title: ep.title || `Episode ${epNum}`,
+                        url: JSON.stringify({ sub: subUrl, dub: dubUrl, ep: epNum, id: aniListId })
+                    });
                 }
+                if (episodes.length > 0) return episodes;
             }
         } catch (e) {
-            console.error("[Megaplay] Failed to fetch episode list from Anikoto API", e);
+            console.error("[Megaplay] Failed to fetch series from Anikoto API", e);
         }
 
-        // Fallback: Default to a smaller count (e.g. 12 or 24) if API fetch fails
-        const fallbackCount = 24;
-        for (let i = 1; i <= fallbackCount; i++) {
+        // Fallback
+        for (let i = 1; i <= 24; i++) {
             episodes.push({
                 id: `${aniListId}?ep=${i}`,
                 number: i,
                 title: `Episode ${i}`,
-                url: `${aniListId}?ep=${i}`
+                url: JSON.stringify({ sub: "", dub: "", ep: i, id: aniListId })
             });
         }
 
@@ -84,29 +90,53 @@ class Provider {
         episode: EpisodeDetails,
         _server: string
     ): Promise<EpisodeServer> {
-        const isDub = episode.url.includes("dub=true");
-        const episodeNum = episode.number;
-        
-        const aniListId = episode.url.split('?')[0];
-        const langPath = isDub ? "dub" : "sub";
+        const isDub = episode.url.includes('"dub":') ? episode.url.includes("dub=true") : false;
+        let targetUrl = "";
 
-        // Endpoint per Megaplay docs: /stream/ani/{anilist-id}/{ep-num}/{language}
-        const embedUrl = `${this.api}/stream/ani/${aniListId}/${episodeNum}/${langPath}`;
+        try {
+            const data = JSON.parse(episode.url);
+            targetUrl = isDub ? (data.dub || data.sub) : (data.sub || data.dub);
+            
+            if (!targetUrl) {
+                targetUrl = `https://megaplay.buzz/stream/ani/${data.id}/${data.ep}/${isDub ? 'dub' : 'sub'}`;
+            }
+        } catch {
+            const aniListId = episode.url.split('?')[0];
+            targetUrl = `https://megaplay.buzz/stream/ani/${aniListId}/${episode.number}/${isDub ? 'dub' : 'sub'}`;
+        }
 
-        console.debug(`[Megaplay] Generated Embed Target: ${embedUrl}`);
+        console.debug(`[Megaplay] Resolving Stream URL: ${targetUrl}`);
+
+        // Scrape or fetch the m3u8 playlist URL from targetUrl
+        let finalStreamUrl = targetUrl;
+        try {
+            const res = await fetch(targetUrl, {
+                headers: {
+                    "Referer": "https://megaplay.buzz/",
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+                }
+            });
+            const text = await res.text();
+            const match = text.match(/(https?:\/\/[^"'\s]+\.m3u8[^"'\s]*)/i);
+            if (match) {
+                finalStreamUrl = match[1];
+            }
+        } catch (e) {
+            console.error("[Megaplay] Could not resolve direct m3u8 playlist", e);
+        }
 
         return {
             server: "Server 1",
             headers: {
                 "Referer": "https://megaplay.buzz/",
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36"
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
             },
             videoSources: [
                 {
                     quality: "Auto",
                     subtitles: [],
-                    type: "iframe",
-                    url: embedUrl
+                    type: "m3u8",
+                    url: finalStreamUrl
                 }
             ]
         };
